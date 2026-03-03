@@ -694,6 +694,8 @@ const char *handle_branch(Parser *p, const char *opcode, size_t opcode_len) {
         return NULL;
     }
     i32 simm = addr - (g_section->emit_idx + g_section->base);
+    if (simm >= (1<<12) || simm < -(1<<12)) return "Branch immediate too large";
+    if (simm & 1) return "Branch target must be even";
 
     u32 inst = 0;
     if (str_eq_case(opcode, opcode_len, "beq")) inst = BEQ(s1, s2, simm);
@@ -801,6 +803,8 @@ const char *handle_jump(Parser *p, const char *opcode, size_t opcode_len) {
         return NULL;
     }
     i32 simm = addr - (g_section->emit_idx + g_section->base);
+    if (simm >= (1<<20) || simm < -(1<<20)) return "Jump immediate too large";
+    if (simm & 1) return "Jump target must be even";
     asm_emit(JAL(d, simm), p->startline);
     return NULL;
 }
