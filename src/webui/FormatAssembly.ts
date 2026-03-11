@@ -3,16 +3,10 @@ export function formatAssembly(code: string): string {
     const result: string[] = [];
     let inInstructionContinuation = false;
 
-    for (const rawLine of lines) {
-        const line = rawLine.trimEnd();
-
+    for (const line of lines) {
         const trimmed = line.trim();
 
-        if (
-            trimmed === "" &&
-            ((result.length > 0 && result[result.length - 1] === "") ||
-                inInstructionContinuation)
-        ) {
+        if (trimmed === "" && (shouldSkipEmptyLine(result, inInstructionContinuation))) {
             continue;
         }
 
@@ -75,6 +69,10 @@ export function formatAssembly(code: string): string {
 
 function indent(level = 1): string {
     return "    ".repeat(level);
+}
+
+function shouldSkipEmptyLine(result: string[], inContinuation: boolean): boolean {
+    return result.length > 0 && (result[result.length - 1] === "" || inContinuation);
 }
 
 function shouldContinueInstruction(s: string): boolean {
