@@ -245,7 +245,9 @@ bool parse_numeric(Parser *p, i32 *out) {
     Parser start = *p;
     bool negative = false;
     bool parsed_digit = false;
-    u32 value = 0;  // u32 to avoid the issue of signed overflow
+    // NOTE: using a 64bit int to avoid 32bit overflow
+    // if we ever support 64bit numbers, we need a smarter approach
+    i64 value = 0;
     int base = 10;
     while (peek(p) == '-' || peek(p) == '+') {
         if (consume_if(p, '-')) negative = !negative;
@@ -260,7 +262,7 @@ bool parse_numeric(Parser *p, i32 *out) {
             if (c == 'n') c = '\n';
             else if (c == 't') c = '\t';
             else if (c == 'r') c = '\r';
-            else if (c == 'b') c = '\b';
+            else if (c == 'e') c = '\e';
             else if (c == 'f') c = '\f';
             else if (c == 'a') c = '\a';
             else if (c == 'b') c = '\b';
@@ -280,7 +282,6 @@ bool parse_numeric(Parser *p, i32 *out) {
             if (base != 10) advance_n(p, 2);
         }
 
-        // TODO: handle overflow
         for (char c; (c = peek(p));) {
             int digit = base;
             if (c >= '0' && c <= '9') digit = c - '0';
@@ -293,15 +294,20 @@ bool parse_numeric(Parser *p, i32 *out) {
             }
             parsed_digit = true;
             value = value * base + digit;
+            // by giving an extremely long number
+            // the user could overflow the i64 too
+            if (value > 4294967295) return false;
             advance(p);
         }
-
         if (!parsed_digit) {
             *p = start;
             return false;
         }
     }
     if (negative) value = -value;
+    if (value < -2147483648LL || value > 4294967295LL) {
+        return false; 
+    }
     *out = value;
     return true;
 }
@@ -586,8 +592,12 @@ const char *handle_alu_imm(Parser *p, const char *opcode, size_t opcode_len) {
 
     skip_whitespace(p);
 
-    if (!parse_numeric(p, &simm)) return "Invalid imm";
-    if (simm < -2048 || simm > 2047) return "Out of bounds imm";
+    if (!parse_numeric(p, &simm)) return "Invalid immediate";
+    if (simm < -2048 || simm > 2047) return "Out of bounds immediate";
+    bool is_shift = str_eq_case(opcode, opcode_len, "slli") ||
+                    str_eq_case(opcode, opcode_len, "srli") ||
+                    str_eq_case(opcode, opcode_len, "srai");
+    if (is_shift && (simm < 0 || simm >= 32)) return "Invalid shift immediate";
 
     u32 inst = 0;
     if (str_eq_case(opcode, opcode_len, "addi")) inst = ADDI(d, s1, simm);
@@ -616,8 +626,8 @@ const char *handle_ldst(Parser *p, const char *opcode, size_t opcode_len) {
     if (!consume_if(p, ',')) return "Expected ,";
 
     skip_whitespace(p);
-    if (!parse_numeric(p, &simm)) return "Invalid imm";
-    if (simm < -2048 || simm > 2047) return "Out of bounds imm";
+    if (!parse_numeric(p, &simm)) return "Invalid immediate";
+    if (simm < -2048 || simm > 2047) return "Out of bounds immediate";
 
     skip_whitespace(p);
     if (!consume_if(p, '(')) return "Expected (";
@@ -700,7 +710,8 @@ const char *handle_branch(Parser *p, const char *opcode, size_t opcode_len) {
         return NULL;
     }
     i32 simm = addr - (g_section->emit_idx + g_section->base);
-    if (simm >= (1<<12) || simm < -(1<<12)) return "Branch immediate too large";
+    if (simm >= (1 << 12) || simm < -(1 << 12))
+        return "Branch immediate too large";
     if (simm & 1) return "Branch target must be even";
 
     u32 inst = 0;
@@ -739,6 +750,9 @@ const char *handle_branch_zero(Parser *p, const char *opcode,
         return NULL;
     }
     i32 simm = addr - (g_section->emit_idx + g_section->base);
+    if (simm >= (1 << 12) || simm < -(1 << 12))
+        return "Branch immediate too large";
+    if (simm & 1) return "Branch target must be even";
 
     u32 inst = 0;
     if (str_eq_case(opcode, opcode_len, "beqz")) inst = BEQ(s, 0, simm);
@@ -786,7 +800,8 @@ const char *handle_jump(Parser *p, const char *opcode, size_t opcode_len) {
 
     skip_whitespace(p);
     // jal optionally takes a register argument
-    if (str_eq_case(opcode, opcode_len, "jal") || str_eq_case(opcode, opcode_len, "call")) {
+    if (str_eq_case(opcode, opcode_len, "jal") ||
+        str_eq_case(opcode, opcode_len, "call")) {
         if ((d = parse_reg(p)) == -1) err = "Invalid rd";
         skip_whitespace(p);
         if (consume_if(p, ',')) {
@@ -809,7 +824,8 @@ const char *handle_jump(Parser *p, const char *opcode, size_t opcode_len) {
         return NULL;
     }
     i32 simm = addr - (g_section->emit_idx + g_section->base);
-    if (simm >= (1<<20) || simm < -(1<<20)) return "Jump immediate too large";
+    if (simm >= (1 << 20) || simm < -(1 << 20))
+        return "Jump immediate too large";
     if (simm & 1) return "Jump target must be even";
     asm_emit(JAL(d, simm), p->startline);
     return NULL;
@@ -849,7 +865,7 @@ const char *handle_jump_reg(Parser *p, const char *opcode, size_t opcode_len) {
             skip_whitespace(p);
             if (!consume_if(p, ',')) return "Expected ,";
             skip_whitespace(p);
-            if (!parse_numeric(p, &simm)) return "Invalid imm";
+            if (!parse_numeric(p, &simm)) return "Invalid immediate";
         }
         if (simm >= -2048 && simm <= 2047)
             asm_emit(JALR(d, s, simm), p->startline);
@@ -876,9 +892,9 @@ const char *handle_upper(Parser *p, const char *opcode, size_t opcode_len) {
     skip_whitespace(p);
     if (!consume_if(p, ',')) return "Expected ,";
     skip_whitespace(p);
-    if (!parse_numeric(p, &simm)) return "Invalid imm";
+    if (!parse_numeric(p, &simm)) return "Invalid immediate";
     // the immediate can either be signed or unsigned 20 bit
-    if (simm < -524288 || simm > 1048575) return "Out of bounds imm";
+    if (simm < -524288 || simm > 1048575) return "Out of bounds immediate";
 
     if (str_eq_case(opcode, opcode_len, "lui")) inst = LUI(d, simm);
     else if (str_eq_case(opcode, opcode_len, "auipc")) inst = AUIPC(d, simm);
@@ -896,7 +912,7 @@ const char *handle_li(Parser *p, const char *opcode, size_t opcode_len) {
     skip_whitespace(p);
     if (!consume_if(p, ',')) return "Expected ,";
     skip_whitespace(p);
-    if (!parse_numeric(p, &simm)) return "Invalid imm";
+    if (!parse_numeric(p, &simm)) return "Invalid immediate";
 
     if (simm >= -2048 && simm <= 2047) {
         asm_emit(ADDI(d, 0, simm), p->startline);
@@ -1004,7 +1020,7 @@ const char *handle_csr_imm(Parser *p, const char *opcode, size_t opcode_len) {
     if (!consume_if(p, ',')) return "Expected ,";
 
     skip_whitespace(p);
-    if (!parse_numeric(p, &zimm)) return "Invalid imm";
+    if (!parse_numeric(p, &zimm)) return "Invalid immediate";
 
     u32 inst = 0;
     if (str_eq_case(opcode, opcode_len, "csrrwi")) inst = CSRRWI(d, zimm, csr);
@@ -1029,7 +1045,7 @@ OpcodeHandling opcode_types[] = {
          "mul", "mulh", "mulu", "mulhu", "div", "divu", "rem", "remu"},
     },
     {handle_alu_imm,
-     {"addi", "slt", "sltiu", "andi", "ori", "xori", "slli", "srli", "srai"}},
+     {"addi", "slti", "sltiu", "andi", "ori", "xori", "slli", "srli", "srai"}},
     {handle_ldst, {"lb", "lh", "lw", "lbu", "lhu", "sb", "sh", "sw"}},
     {handle_branch,
      {"beq", "bne", "blt", "bge", "bltu", "bgeu", "bgt", "ble", "bgtu",

@@ -148,17 +148,45 @@ void test_unterminated_instruction(void) {
 
 void test_addi_immediate_out_of_range(void) {
     assemble_line("addi x1, x2, 3000");
-    TEST_ASSERT_EQUAL_STRING(g_error, "Out of bounds imm");
+    TEST_ASSERT_EQUAL_STRING(g_error, "Out of bounds immediate");
 }
 
 void test_lui_immediate_out_of_range(void) {
     assemble_line("lui x1, 1048576");
-    TEST_ASSERT_EQUAL_STRING(g_error, "Out of bounds imm");
+    TEST_ASSERT_EQUAL_STRING(g_error, "Out of bounds immediate");
+}
+
+void test_number_parsing_i64_overflow(void) {
+    assemble_line(".data\n.word 1234567890123456789012345678901234567890");
+    TEST_ASSERT_EQUAL_STRING(g_error, "Invalid word");
+}
+
+void test_number_parsing_u32_overflow(void) {
+    assemble_line(".data\n.word 4294967296");
+    TEST_ASSERT_EQUAL_STRING(g_error, "Invalid word");
+}
+
+void test_number_parsing_i32_overflow(void) {
+    assemble_line(".data\n.word -2147483649");
+    TEST_ASSERT_EQUAL_STRING(g_error, "Invalid word");
+}
+
+void test_number_parsing_u32_edge(void) {
+    assemble_line(".data\n.word -2147483648");
+    TEST_ASSERT_NULL(g_error);
 }
 
 void test_sw_immediate_out_of_range(void) {
     assemble_line("sw x1, 5000(x2)");
-    TEST_ASSERT_EQUAL_STRING(g_error, "Out of bounds imm");
+    TEST_ASSERT_EQUAL_STRING(g_error, "Out of bounds immediate");
+}
+
+void test_sw_immediate_negative(void) {
+    assemble_line("sw x1, -1(x2)");
+    u32 word;
+    TEST_ASSERT_EQUAL_INT(g_text->contents.len, 4);
+    memcpy(&word, g_text->contents.buf, 4);
+    TEST_ASSERT_EQUAL_INT(word, 0xfe112fa3);
 }
 
 void test_sw_immediate_newline(void) {
@@ -203,16 +231,16 @@ void test_sw_newline(void) {
 
 void test_addi_oob(void) {
     assemble_line("addi x1, x2, 2048");
-    TEST_ASSERT_EQUAL_STRING(g_error, "Out of bounds imm");
+    TEST_ASSERT_EQUAL_STRING(g_error, "Out of bounds immediate");
     free_runtime();
 
     assemble_line("addi x1, x2, -2049");
-    TEST_ASSERT_EQUAL_STRING(g_error, "Out of bounds imm");
+    TEST_ASSERT_EQUAL_STRING(g_error, "Out of bounds immediate");
 }
 
 void test_lui_oob(void) {
     assemble_line("lui x1, 0x100000");
-    TEST_ASSERT_EQUAL_STRING(g_error, "Out of bounds imm");
+    TEST_ASSERT_EQUAL_STRING(g_error, "Out of bounds immediate");
 }
 
 void test_add_invalid_reg(void) {
@@ -229,6 +257,17 @@ void test_add_invalid_reg_3(void) {
     assemble_line("add x0, x0, x08");
     TEST_ASSERT_EQUAL_STRING(g_error, "Invalid rs2");
 }
+
+void test_shift_invalid_imm_1(void) {
+    assemble_line("srai x0, x0, 32");
+    TEST_ASSERT_EQUAL_STRING(g_error, "Invalid shift immediate");
+}
+
+void test_shift_invalid_imm_2(void) {
+    assemble_line("srai x0, x0, -6");
+    TEST_ASSERT_EQUAL_STRING(g_error, "Invalid shift immediate");
+}
+
 
 void test_add_invalid_reg_4(void) {
     assemble_line("add x0, x$, x0");
