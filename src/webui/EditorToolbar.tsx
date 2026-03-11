@@ -2,6 +2,7 @@ import { Component, Show } from "solid-js";
 import { prefixStr, testsuiteName } from "./App";
 import { continueStep, nextStep, quitDebug, reverseStep, runNormal, runTestSuite, setWasmRuntime, singleStep, startStep, wasmRuntime } from "./EmulatorState";
 import { doChangeTheme } from "./Theme";
+import { formatAssembly } from "./FormatAssembly";
 
 // to rebuild font.woff2, download https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,200,0,0&icon_names=arrow_forward,dark_mode,folder_open,play_circle,resume,save,step_into,step_over,stop,undo
 
@@ -36,6 +37,12 @@ export const EditorToolbar: Component<{ textGetter: () => string, setText: (s: s
                         icon="folder_open"
                         title="Open file"
                         onClick={() => doOpen(props.setText)} />
+
+                    <ToolbarBtn
+                        class="theme-bg"
+                        icon="auto_fix_high"
+                        title="Format code"
+                        onClick={() => props.setText(formatAssembly(props.textGetter()))} />
 
                     <div class="w-px h-5 theme-separator mx-1"></div>
 
