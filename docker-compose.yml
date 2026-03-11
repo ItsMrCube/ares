@@ -1,0 +1,9 @@
+services:
+  ares:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ares
+    ports:
+      - "80"
+    restart: unless-stopped
