@@ -1,0 +1,16 @@
+services:
+  ares:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    pull_policy: build
+    container_name: ares
+    ports:
+      - "80"
+    restart: unless-stopped
+    networks:
+      cloudflared:
+
+networks:
+  cloudflared:
+    external: true
