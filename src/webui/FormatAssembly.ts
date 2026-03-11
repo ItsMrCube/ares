@@ -1,6 +1,7 @@
 export function formatAssembly(code: string): string {
     const lines = code.split("\n");
     const result: string[] = [];
+    let inInstructionContinuation = false;
 
     for (const rawLine of lines) {
         const line = rawLine.trimEnd();
@@ -9,14 +10,15 @@ export function formatAssembly(code: string): string {
 
         if (
             trimmed === "" &&
-            result.length > 0 &&
-            result[result.length - 1] === ""
+            ((result.length > 0 && result[result.length - 1] === "") ||
+                inInstructionContinuation)
         ) {
             continue;
         }
 
         if (trimmed === "") {
             result.push("");
+            inInstructionContinuation = false;
             continue;
         }
 
@@ -27,11 +29,13 @@ export function formatAssembly(code: string): string {
             trimmed.startsWith("*")
         ) {
             result.push(trimmed);
+            inInstructionContinuation = false;
             continue;
         }
 
         if (trimmed.startsWith(".")) {
             result.push(normalizeInstruction(trimmed));
+            inInstructionContinuation = false;
             continue;
         }
 
@@ -48,17 +52,34 @@ export function formatAssembly(code: string): string {
             if (rest !== "") {
                 if (rest.startsWith(".")) {
                     result.push(normalizeInstruction(rest));
+                    inInstructionContinuation = false;
                 } else {
-                    result.push("    " + normalizeInstruction(rest));
+                    result.push(indent() + normalizeInstruction(rest));
+                    inInstructionContinuation = shouldContinueInstruction(rest);
                 }
+            } else {
+                inInstructionContinuation = false;
             }
+
             continue;
         }
 
-        result.push("    " + normalizeInstruction(trimmed));
+        result.push(
+            indent(inInstructionContinuation ? 2 : 1) + normalizeInstruction(trimmed),
+        );
+        inInstructionContinuation = shouldContinueInstruction(trimmed);
     }
 
     return result.join("\n");
+}
+
+function indent(level = 1): string {
+    return "    ".repeat(level);
+}
+
+function shouldContinueInstruction(s: string): boolean {
+    const { code } = splitComment(s);
+    return code.trimEnd().endsWith(",");
 }
 
 function normalizeInstruction(s: string): string {
